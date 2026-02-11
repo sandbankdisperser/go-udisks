@@ -1,6 +1,9 @@
 package udisks
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/godbus/dbus/v5"
 
 	"github.com/godbus/dbus/v5/introspect"
@@ -23,6 +26,17 @@ type Drive struct {
 	Seat           string
 	Removable      bool
 	Size           uint64
+	CanPowerOff    bool
+}
+type BlockDevices []*BlockDevice
+
+func (b BlockDevices) ByDevice(device string) *BlockDevice {
+	for _, v := range b {
+		if v.Device == device {
+			return v
+		}
+	}
+	return nil
 }
 
 type BlockDevice struct {
@@ -32,6 +46,15 @@ type BlockDevice struct {
 	Drive               *Drive
 	Filesystems         []Filesystem
 	CryptoBackingDevice *CryptoBackingDevice
+}
+
+func (b *BlockDevice) IsMounted() bool {
+	for _, v := range b.Filesystems {
+		if v.IsMounted() {
+			return true
+		}
+	}
+	return false
 }
 
 type CryptoBackingDevice struct {
@@ -46,6 +69,9 @@ type Filesystem struct {
 	Size        uint64
 }
 
+func (f Filesystem) IsMounted() bool {
+	return len(f.MountPoints) > 0
+}
 func NewClient() (*Client, error) {
 	c := &Client{}
 	conn, err := dbus.ConnectSystemBus()
@@ -57,15 +83,74 @@ func NewClient() (*Client, error) {
 	return c, nil
 }
 
+// PowerOff unmounts all blockdevices on the device, lock any unlocked encrypted containers and then powers off the device
+func (c Client) PowerOff(d *Drive) error {
+	if !d.CanPowerOff {
+		return ErrPowerOffNotSupported
+	}
+	blocks, err := c.BlockDevices()
+	if err != nil {
+		return err
+	}
+
+	for _, b := range blocks {
+		if b.CryptoBackingDevice != nil {
+			if b.CryptoBackingDevice.CleartextDevicePath != "" {
+				cryptoDrive := blocks.ByDevice(b.CryptoBackingDevice.Path)
+				if cryptoDrive.Drive != nil && cryptoDrive.Drive.Id == d.Id {
+					if b.IsMounted() {
+						if err := c.UnmountBlockDevice(b.Device); err != nil {
+							return fmt.Errorf("%w:  %w", ErrUnmountFailed, err)
+						}
+					}
+					if err := c.LockCryptoDevice(b.CryptoBackingDevice.Path); err != nil {
+						return fmt.Errorf("%w:  %w", ErrUnmountFailed, err)
+					}
+				}
+			}
+		} else {
+			if b.Drive != nil && b.Drive.Id == d.Id {
+				if len(b.Filesystems) > 0 {
+					if err := c.UnmountBlockDevice(b.Id); err != nil {
+						return fmt.Errorf("%w: %w", ErrUnmountFailed, err)
+					}
+				}
+			}
+		}
+	}
+	path := "/org/freedesktop/UDisks2/drives/" + strings.ReplaceAll(d.Id, "-", "_")
+	powerOffObj := c.conn.Object("org.freedesktop.UDisks2", dbus.ObjectPath(path))
+	opt := map[string]interface{}{
+		"auth.no_user_interaction": true,
+	}
+	return powerOffObj.Call("org.freedesktop.UDisks2.Drive.PowerOff", 0, &opt).Err
+}
+func (c *Client) LockCryptoDevice(id string) error {
+	opt := map[string]interface{}{
+		"auth.no_user_interaction": true,
+	}
+	obj := c.conn.Object("org.freedesktop.UDisks2", dbus.ObjectPath(id))
+	result := obj.Call("org.freedesktop.UDisks2.Encrypted.Lock", 0, opt)
+	return result.Err
+}
+func (c *Client) UnmountBlockDevice(id string) error {
+	opt := map[string]interface{}{
+		"auth.no_user_interaction": true,
+	}
+	obj := c.conn.Object("org.freedesktop.UDisks2", dbus.ObjectPath(id))
+	result := obj.Call("org.freedesktop.UDisks2.Filesystem.Unmount", 0, opt)
+	return result.Err
+}
+
 // BlockDevices returns the list of all block devices known to UDisks
-func (c *Client) BlockDevices() ([]*BlockDevice, error) {
+func (c *Client) BlockDevices() (BlockDevices, error) {
 	conn := c.conn
 	var list []string
 	var filter map[string]interface{}
 	obj := conn.Object("org.freedesktop.UDisks2", "/org/freedesktop/UDisks2/Manager")
 	err := obj.Call("org.freedesktop.UDisks2.Manager.GetBlockDevices", 0, &filter).Store(&list)
 	if err != nil {
-		return nil, err
+		return BlockDevices{}, err
 	}
 
 	bdevs := []*BlockDevice{}
@@ -82,10 +167,16 @@ func (c *Client) BlockDevices() ([]*BlockDevice, error) {
 		if err == nil {
 			cbd.Call("org.freedesktop.DBus.Properties.GetAll", 0, "org.freedesktop.UDisks2.Encrypted").Store(&props)
 			if len(props) != 0 {
-				dev.CryptoBackingDevice = &CryptoBackingDevice{}
-				dev.CryptoBackingDevice.Path = string(cbd.Path())
-				dev.CryptoBackingDevice.HintEncryptionType = props["HintEncryptionType"].Value().(string)
-				dev.CryptoBackingDevice.MetadataSize = props["MetadataSize"].Value().(uint64)
+				dev.CryptoBackingDevice = &CryptoBackingDevice{
+					Path:               string(cbd.Path()),
+					HintEncryptionType: props["HintEncryptionType"].Value().(string),
+					MetadataSize:       props["MetadataSize"].Value().(uint64),
+				}
+
+				clearPath := props["CleartextDevice"].Value()
+				if val, ok := clearPath.(dbus.ObjectPath); ok && val.IsValid() {
+					dev.CryptoBackingDevice.CleartextDevicePath = string(val)
+				}
 			}
 		}
 
@@ -94,6 +185,7 @@ func (c *Client) BlockDevices() ([]*BlockDevice, error) {
 		obj.Call("org.freedesktop.DBus.Properties.GetAll", 0, "org.freedesktop.UDisks2.Filesystem").Store(&props)
 
 		if len(props) != 0 {
+
 			fs := Filesystem{}
 			va := props["MountPoints"].Value()
 			if va != nil {
@@ -136,4 +228,18 @@ func (c *Client) Drives() ([]*Drive, error) {
 	}
 
 	return drives, nil
+}
+
+func (c *Client) DriveById(name string) (*Drive, error) {
+	//we need to replace - with _ to give the correct id
+	path := "/org/freedesktop/UDisks2/drives/" + strings.ReplaceAll(name, "-", "_")
+	obj := c.conn.Object("org.freedesktop.UDisks2", dbus.ObjectPath(path))
+	drv, err := c.buildDrive(obj)
+	if err != nil {
+		return drv, err
+	}
+	if drv.Id == "" {
+		return drv, ErrDriveNotFound
+	}
+	return drv, err
 }

@@ -6,7 +6,7 @@ import (
 
 	"os"
 
-	"github.com/rubiojr/go-udisks"
+	"github.com/sandbankdisperser/go-udisks"
 )
 
 func main() {

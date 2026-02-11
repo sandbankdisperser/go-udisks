@@ -1,4 +1,4 @@
-module github.com/rubiojr/go-udisks
+module github.com/sandbankdisperser/go-udisks
 
 go 1.18
 

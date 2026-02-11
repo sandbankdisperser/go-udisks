@@ -51,8 +51,8 @@ func uint64Property(path string, obj dbus.BusObject, p *uint64) error {
 	return nil
 }
 
-func objGet(conn *dbus.Conn, p string, obj dbus.BusObject) (dbus.BusObject, error) {
-	v, err := obj.GetProperty(p)
+func objGet(conn *dbus.Conn, property string, obj dbus.BusObject) (dbus.BusObject, error) {
+	v, err := obj.GetProperty(property)
 	if err != nil {
 		return nil, err
 	}
@@ -98,6 +98,7 @@ func (c *Client) buildDrive(objDrv dbus.BusObject) (*Drive, error) {
 	boolProperty("org.freedesktop.UDisks2.Drive.Ejectable", objDrv, &drv.Ejectable)
 	boolProperty("org.freedesktop.UDisks2.Drive.Removable", objDrv, &drv.Removable)
 	uint64Property("org.freedesktop.UDisks2.Drive.Size", objDrv, &drv.Size)
+	boolProperty("org.freedesktop.UDisks2.Drive.CanPowerOff", objDrv, &drv.CanPowerOff)
 
 	return drv, nil
 }
