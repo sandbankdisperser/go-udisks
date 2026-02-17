@@ -43,6 +43,8 @@ type BlockDevice struct {
 	UUID                string
 	Device              string
 	Id                  string
+	IdUsage             string
+	IdLabel             string
 	Drive               *Drive
 	Filesystems         []Filesystem
 	CryptoBackingDevice *CryptoBackingDevice
@@ -125,19 +127,19 @@ func (c Client) PowerOff(d *Drive) error {
 	}
 	return powerOffObj.Call("org.freedesktop.UDisks2.Drive.PowerOff", 0, &opt).Err
 }
-func (c *Client) LockCryptoDevice(id string) error {
+func (c *Client) LockCryptoDevice(path string) error {
 	opt := map[string]interface{}{
 		"auth.no_user_interaction": true,
 	}
-	obj := c.conn.Object("org.freedesktop.UDisks2", dbus.ObjectPath(id))
+	obj := c.conn.Object("org.freedesktop.UDisks2", dbus.ObjectPath(path))
 	result := obj.Call("org.freedesktop.UDisks2.Encrypted.Lock", 0, opt)
 	return result.Err
 }
-func (c *Client) UnmountBlockDevice(id string) error {
+func (c *Client) UnmountBlockDevice(path string) error {
 	opt := map[string]interface{}{
 		"auth.no_user_interaction": true,
 	}
-	obj := c.conn.Object("org.freedesktop.UDisks2", dbus.ObjectPath(id))
+	obj := c.conn.Object("org.freedesktop.UDisks2", dbus.ObjectPath(path))
 	result := obj.Call("org.freedesktop.UDisks2.Filesystem.Unmount", 0, opt)
 	return result.Err
 }
@@ -161,6 +163,8 @@ func (c *Client) BlockDevices() (BlockDevices, error) {
 		dev.Device = bd
 		stringProperty("org.freedesktop.UDisks2.Block.IdUUID", obj, &dev.UUID)
 		stringProperty("org.freedesktop.UDisks2.Block.Id", obj, &dev.Id)
+		stringProperty("org.freedesktop.UDisks2.Block.IdUsage", obj, &dev.IdUsage)
+		stringProperty("org.freedesktop.UDisks2.Block.IdLabel", obj, &dev.IdLabel)
 
 		var props map[string]dbus.Variant
 		cbd, err := objGet(conn, "org.freedesktop.UDisks2.Block.CryptoBackingDevice", obj)
@@ -242,4 +246,26 @@ func (c *Client) DriveById(name string) (*Drive, error) {
 		return drv, ErrDriveNotFound
 	}
 	return drv, err
+}
+func (c *Client) BlockDevicesOnDrive(id string) ([]*BlockDevice, error) {
+	blocks, err := c.BlockDevices()
+	if err != nil {
+		return []*BlockDevice{}, err
+	}
+	blockDevices := make([]*BlockDevice, 0)
+	for _, b := range blocks {
+		if b.CryptoBackingDevice != nil {
+			if b.CryptoBackingDevice.CleartextDevicePath != "" {
+				cryptoDrive := blocks.ByDevice(b.CryptoBackingDevice.Path)
+				if cryptoDrive.Drive != nil && cryptoDrive.Drive.Id == id {
+					blockDevices = append(blockDevices, b)
+				}
+			}
+		} else {
+			if b.Drive != nil && b.Drive.Id == id {
+				blockDevices = append(blockDevices, b)
+			}
+		}
+	}
+	return blockDevices, nil
 }
