@@ -45,6 +45,7 @@ type BlockDevice struct {
 	Id                  string
 	IdUsage             string
 	IdLabel             string
+	IdType              string
 	Drive               *Drive
 	Filesystems         []Filesystem
 	CryptoBackingDevice *CryptoBackingDevice
@@ -165,6 +166,7 @@ func (c *Client) BlockDevices() (BlockDevices, error) {
 		stringProperty("org.freedesktop.UDisks2.Block.Id", obj, &dev.Id)
 		stringProperty("org.freedesktop.UDisks2.Block.IdUsage", obj, &dev.IdUsage)
 		stringProperty("org.freedesktop.UDisks2.Block.IdLabel", obj, &dev.IdLabel)
+		stringProperty("org.freedesktop.UDisks2.Block.IdType", obj, &dev.IdType)
 
 		var props map[string]dbus.Variant
 		cbd, err := objGet(conn, "org.freedesktop.UDisks2.Block.CryptoBackingDevice", obj)
