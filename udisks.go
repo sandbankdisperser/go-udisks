@@ -27,6 +27,8 @@ type Drive struct {
 	Removable      bool
 	Size           uint64
 	CanPowerOff    bool
+	NVMeController *NVMeController
+	Ata            *Ata
 }
 type BlockDevices []*BlockDevice
 
