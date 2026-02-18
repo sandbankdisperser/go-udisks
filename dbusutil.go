@@ -1,8 +1,6 @@
 package udisks
 
 import (
-	"fmt"
-
 	"github.com/godbus/dbus/v5"
 )
 
@@ -31,7 +29,7 @@ func stringProperty(path string, obj dbus.BusObject, p *string) error {
 	var ok bool
 	*p, ok = v.Value().(string)
 	if !ok {
-		return err
+		return ErrInvalidPropertyFormat
 	}
 
 	return nil
@@ -46,7 +44,7 @@ func boolProperty(path string, obj dbus.BusObject, p *bool) error {
 	var ok bool
 	*p, ok = v.Value().(bool)
 	if !ok {
-		return err
+		return ErrInvalidPropertyFormat
 	}
 
 	return nil
@@ -61,7 +59,7 @@ func uint64Property(path string, obj dbus.BusObject, p *uint64) error {
 	var ok bool
 	*p, ok = v.Value().(uint64)
 	if !ok {
-		return err
+		return ErrInvalidPropertyFormat
 	}
 
 	return nil
@@ -76,7 +74,7 @@ func objGet(conn *dbus.Conn, property string, obj dbus.BusObject) (dbus.BusObjec
 	var ok bool
 	path, ok := v.Value().(dbus.ObjectPath)
 	if !ok {
-		return nil, fmt.Errorf("invalid object property")
+		return nil, ErrInvalidPropertyFormat
 	}
 	driveObj := conn.Object("org.freedesktop.UDisks2", path)
 
