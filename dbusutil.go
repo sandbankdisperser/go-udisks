@@ -6,6 +6,22 @@ import (
 	"github.com/godbus/dbus/v5"
 )
 
+func stringArrayPropertyFromByte(path string, obj dbus.BusObject, p *[]string) error {
+	v, err := obj.GetProperty(path)
+	if err != nil {
+		return err
+	}
+	t, ok := v.Value().([][]uint8)
+	if !ok {
+		return ErrInvalidPropertyFormat
+	}
+	*p = make([]string, len(t))
+	for i, v := range t {
+		acc := *p
+		acc[i] = string(v)
+	}
+	return nil
+}
 func stringProperty(path string, obj dbus.BusObject, p *string) error {
 	v, err := obj.GetProperty(path)
 	if err != nil {
@@ -99,6 +115,5 @@ func (c *Client) buildDrive(objDrv dbus.BusObject) (*Drive, error) {
 	boolProperty("org.freedesktop.UDisks2.Drive.Removable", objDrv, &drv.Removable)
 	uint64Property("org.freedesktop.UDisks2.Drive.Size", objDrv, &drv.Size)
 	boolProperty("org.freedesktop.UDisks2.Drive.CanPowerOff", objDrv, &drv.CanPowerOff)
-
 	return drv, nil
 }

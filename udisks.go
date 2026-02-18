@@ -48,6 +48,7 @@ type BlockDevice struct {
 	IdType              string
 	Drive               *Drive
 	Filesystems         []Filesystem
+	Symlinks            []string
 	CryptoBackingDevice *CryptoBackingDevice
 }
 
@@ -167,6 +168,7 @@ func (c *Client) BlockDevices() (BlockDevices, error) {
 		stringProperty("org.freedesktop.UDisks2.Block.IdUsage", obj, &dev.IdUsage)
 		stringProperty("org.freedesktop.UDisks2.Block.IdLabel", obj, &dev.IdLabel)
 		stringProperty("org.freedesktop.UDisks2.Block.IdType", obj, &dev.IdType)
+		stringArrayPropertyFromByte("org.freedesktop.UDisks2.Block.Symlinks", obj, &dev.Symlinks)
 
 		var props map[string]dbus.Variant
 		cbd, err := objGet(conn, "org.freedesktop.UDisks2.Block.CryptoBackingDevice", obj)
